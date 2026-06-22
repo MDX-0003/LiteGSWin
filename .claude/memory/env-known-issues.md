@@ -17,7 +17,7 @@ metadata:
 | `nvcc fatal: Could not set up environment for MSVC 14.44` | CUDA 12.8 doesn't support MSVC 14.44 | Use MSVC 14.38.33130 instead |
 | `DISTUTILS_USE_SDK` error | VS Developer PowerShell pre-activates VC env | Use **normal PowerShell**, don't use Developer Shell |
 | COLMAP `SQLite error database.cc:1063` | Old COLMAP 3.8 database format | Delete `database.db` and regenerate with 3.12.3 |
-| `Check failed: NumPoints2D() (923 vs. 2207)` | Calibration/training keypoint count mismatch | Auto-fixed by `sync_calibration_keypoints()` in triangulate script |
+| `Check failed: NumPoints2D() (923 vs. 2207)` | Calibration/training keypoint count mismatch | Auto-fixed by `sync_calibration_keypoints()` in prepare_colmap_dataset.py |
 | `Database images do not match calibration` (only even images missing) | Empty keypoint lines break parser state machine | Use non-empty placeholder keypoints: `0 0 -1` |
 | `batch_run.py --force` doesn't force re-run | `--force` not forwarded to `run_LiteGS_pipeline.py` | Use `-- --force` after batch args |
 | `uv python utils\script.py` fails | `uv python` manages Python versions, doesn't run scripts | Use `uv run python utils\script.py` |

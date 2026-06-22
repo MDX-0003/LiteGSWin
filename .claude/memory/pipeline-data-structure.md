@@ -37,7 +37,7 @@ data/
 ```
 prepare_calibration.py → calibration sparse (cameras.txt + images.txt)
                               ↓
-triangulate_from_calibration.py → training sparse (cameras.bin + images.bin + points3D.ply)
+prepare_colmap_dataset.py → training sparse (cameras.bin + images.bin + points3D.ply) — with or without calibration
                               ↓
 example_train.py → results/<sub_dir>/<frame_id>/point_cloud/finish/point_cloud.ply
                               ↓

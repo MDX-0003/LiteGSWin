@@ -26,7 +26,7 @@ metadata:
 
 1. `utils/prepare_calibration.py` → `strip_calibration_keypoints()`: After `write_baseline_sparse()`, rewrites `sparse/images.txt` with placeholder keypoints (`0 0 -1` per image). Must be non-empty to keep the parser's alternating state machine working.
 
-2. `utils/triangulate_from_calibration.py` → `sync_calibration_keypoints()`: After feature extraction creates the training DB, reads actual keypoint counts and rewrites calibration `images.txt` with matching placeholders. Called before `point_triangulator`.
+2. `utils/prepare_colmap_dataset.py` → `sync_calibration_keypoints()`: After feature extraction creates the training DB, reads actual keypoint counts and rewrites calibration `images.txt` with matching placeholders. Called before `point_triangulator` (calibration path only).
 
 **Why**: Without this, `point_triangulator` crashes. The source machine may have had matching SIFT counts or a COLMAP build without this check. Our fix makes the pipeline robust regardless.
 

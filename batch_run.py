@@ -4,6 +4,20 @@ Usage:
     python batch_run.py --sub_dir 0613
     python batch_run.py --sub_dir 0613 -r 4 --target_primitives 500000
     python batch_run.py --sub_dir 0613 --start_from 2026-06-13-234712
+    python batch_run.py --sub_dir 0613 --frame_stride 3
+    uv run python batch_run.py --sub_dir 0618 --frame_stride 1 --force_no_calib --force  --iterations 10000   
+    
+    # 帧采样 — 每 3 张保留 1 张
+    uv run python batch_run.py --sub_dir 0618 --frame_stride 3
+
+    # 无标定数据模式 — COLMAP mapper 从零重建
+    uv run python batch_run.py --sub_dir 0618 --force_no_calib
+
+    # 组合使用 — 抽帧 + 无标定
+    uv run python batch_run.py --sub_dir 0618 --frame_stride 3 --force_no_calib
+
+    # 单帧也支持
+    uv run python run_LiteGS_pipeline.py -s data\0618\2026-06-18-195909 --frame_stride 3
 
 All extra arguments are forwarded to run_LiteGS_pipeline.py.
 """
@@ -92,6 +106,7 @@ def run_single(
     sub_dir: str,
     pipeline_extra_args: list[str],
     python_executable: str,
+    force: bool = False,
 ) -> int:
     """Run the pipeline for one frame. Returns the exit code."""
     command = [
@@ -101,6 +116,8 @@ def run_single(
         str(frame_path),
         *pipeline_extra_args,
     ]
+    if force:
+        command.append("--force")
     logging.info("Running: %s", " ".join(command))
     result = subprocess.run(command, cwd=str(REPO_ROOT))
     return result.returncode
@@ -180,6 +197,7 @@ def main() -> int:
             args.sub_dir,
             args.pipeline_extra_args,
             args.python_executable,
+            force=args.force,
         )
         if code != 0:
             logging.error("Frame %s failed with code %d.", frame_path.name, code)

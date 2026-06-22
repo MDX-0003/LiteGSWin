@@ -196,7 +196,7 @@ error: unrecognized subcommand 'utils\prepare_calibration.py'
 
 **背景：** 本项目的管道设计——
 1. `prepare_calibration.py`：用**标定图片**跑 COLMAP SfM，得到 `cameras.txt`（相机参数）和 `images.txt`（每张图的相机位姿 + SIFT 关键点坐标）
-2. `triangulate_from_calibration.py`：用**训练帧图片**跑 SIFT，然后调 `point_triangulator` 将标定相机参数作为输入，对训练帧做三角化
+2. `prepare_colmap_dataset.py`：用**训练帧图片**跑 SIFT，然后有标定时调 `point_triangulator` 三角化，无标定时调 `mapper` 从零重建
 
 **两批图片文件同名（`001.jpg` ~ `114.jpg`）但内容不同。** 标定图片和训练帧图片是同一相机系统在不同时间拍摄的不同画面，因此 SIFT 特征提取结果不同。
 

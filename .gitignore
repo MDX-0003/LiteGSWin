@@ -58,8 +58,7 @@ data/**/*.db-wal
 !data/calibration/*/sparse/**
 
 # Training frame temporary files
-data/*/*/*.ini
-data/*/*/*.sh
+data/**/
 
 # Backup files
 *.bak

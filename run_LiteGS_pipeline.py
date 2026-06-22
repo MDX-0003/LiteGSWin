@@ -142,7 +142,7 @@ def parse_args() -> argparse.Namespace:
         "--calibration_root",
         default=str(REPO_ROOT / "data" / "calibration"),
         type=str,
-        help="Calibration root used by triangulate_from_calibration.py.",
+        help="Calibration root used by prepare_colmap_dataset.py.",
     )
     parser.add_argument(
         "--cameras_json_path",
@@ -170,14 +170,37 @@ def parse_args() -> argparse.Namespace:
         help="Skip COLMAP feature extraction/matching and reuse distorted/database.db.",
     )
     parser.add_argument(
-        "--skip_triangulation",
+        "--skip_colmap",
         action="store_true",
-        help="Skip triangulate_from_calibration.py and train from existing COLMAP outputs.",
+        help="Skip prepare_colmap_dataset.py and train from existing COLMAP outputs.",
     )
     parser.add_argument(
         "--force",
         action="store_true",
         help="Re-run even if the output PLY already exists.",
+    )
+    parser.add_argument(
+        "--iterations",
+        default=30000,
+        type=int,
+        help="LiteGS training iterations. Default: 30000.",
+    )
+    parser.add_argument(
+        "--frame_stride",
+        default=1,
+        type=int,
+        help="Keep every Nth image from input. Forwarded to prepare_colmap_dataset.py.",
+    )
+    parser.add_argument(
+        "--frame_stride_min_images",
+        default=3,
+        type=int,
+        help="Minimum images after stride. Forwarded to prepare_colmap_dataset.py.",
+    )
+    parser.add_argument(
+        "--force_no_calib",
+        action="store_true",
+        help="Force COLMAP mapper mode. Forwarded to prepare_colmap_dataset.py.",
     )
     parser.add_argument(
         "--python_executable",
@@ -201,27 +224,37 @@ def run_command(command: list[str], cwd: Path) -> None:
     subprocess.run(command, cwd=str(cwd), check=True)
 
 
-def build_triangulation_command(args: argparse.Namespace, source_path: Path) -> list[str]:
+def build_colmap_command(args: argparse.Namespace, source_path: Path) -> list[str]:
     command = [
         args.python_executable,
-        str(REPO_ROOT / "utils" / "triangulate_from_calibration.py"),
+        str(REPO_ROOT / "utils" / "prepare_colmap_dataset.py"),
         "-s",
         str(source_path),
         "--calibration_root",
         args.calibration_root,
         "--colmap_executable",
         args.colmap_executable,
+        "--model_sub_dir",
+        args.model_sub_dir,
+        "--frame_stride",
+        str(args.frame_stride),
+        "--frame_stride_min_images",
+        str(args.frame_stride_min_images),
     ]
 
     if args.calib_sparse_path:
         command.extend(["--calib_sparse_path", args.calib_sparse_path])
-    else:
+    elif not args.force_no_calib:
+        # Only pass --calib_sub_dir when we intend to use calibration.
+        # In auto-detect mode, prepare_colmap_dataset.py will auto-detect on its own.
         command.extend(["--calib_sub_dir", args.model_sub_dir])
 
     if args.no_gpu:
         command.append("--no_gpu")
     if args.skip_matching:
         command.append("--skip_matching")
+    if args.force_no_calib:
+        command.append("--force_no_calib")
 
     return command
 
@@ -244,6 +277,8 @@ def build_train_command(
         str(args.resolution),
         "--target_primitives",
         str(args.target_primitives),
+        "--iterations",
+        str(args.iterations),
         *normalize_extra_args(args.train_extra_args),
     ]
 
@@ -354,9 +389,9 @@ def main() -> int:
         # Shared results at results/<model_sub_dir>/
         results_dir = model_path.parent
 
-        if not args.skip_triangulation:
-            triangulation_command = build_triangulation_command(args, source_path)
-            run_command(triangulation_command, REPO_ROOT)
+        if not args.skip_colmap:
+            colmap_command = build_colmap_command(args, source_path)
+            run_command(colmap_command, REPO_ROOT)
             generate_cameras_json(args, source_path, results_dir)
 
         train_command = build_train_command(args, source_path, model_path)

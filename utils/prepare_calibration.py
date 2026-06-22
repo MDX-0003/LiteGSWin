@@ -294,7 +294,7 @@ def strip_calibration_keypoints(images_txt_path: Path) -> None:
     calibration model and the training database.  Since calibration images
     and training images differ, we strip the original keypoints and write one
     dummy entry ``0 0 -1`` per image.  The matching counts will be filled in
-    by triangulate_from_calibration.py after the training database is built.
+    by prepare_colmap_dataset.py after the training database is built.
 
     A non-empty keypoint line is mandatory: load_calibration_image_mapping()
     uses an alternating state machine that skips empty lines without toggling

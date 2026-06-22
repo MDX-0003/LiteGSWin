@@ -58,8 +58,14 @@ uv run python run_LiteGS_pipeline.py -s data\0618\2026-06-18-195909
 # 查看有哪些帧
 uv run python batch_run.py --sub_dir 0618 --dry_run
 
-# 跳过三角化（已有 COLMAP 结果时）
-uv run python run_LiteGS_pipeline.py -s data\0618\2026-06-18-195909 --skip_triangulation
+# 跳过 COLMAP（已有 COLMAP 结果时）
+uv run python run_LiteGS_pipeline.py -s data\0618\2026-06-18-195909 --skip_colmap
+
+# 帧采样（每 3 张取 1 张，减少训练数据量）
+uv run python run_LiteGS_pipeline.py -s data\0618\2026-06-18-195909 --frame_stride 3
+
+# 无标定数据模式（COLMAP mapper 从零重建相机参数）
+uv run python run_LiteGS_pipeline.py -s data\0618\2026-06-18-195909 --force_no_calib
 
 # 指定 COLMAP 路径（不在 PATH 时）
 uv run python batch_run.py --sub_dir 0618 -- --colmap_executable D:\colmap\bin\colmap.exe
@@ -77,7 +83,7 @@ uv run python run_LiteGS_pipeline.py --help
 | `batch_run.py` | 批量训练入口，自动发现 data 下所有帧 |
 | `run_LiteGS_pipeline.py` | 单帧完整管道：三角化 → 训练 → 输出 PLY |
 | `utils/prepare_calibration.py` | 标定管道：SIFT → 匹配 → SfM → 输出相机模型 |
-| `utils/triangulate_from_calibration.py` | 三角化：用标定相机对训练帧做 3D 重建 |
+| `utils/prepare_colmap_dataset.py` | COLMAP 数据集准备：有标定时用 point_triangulator 三角化，无标定时用 mapper 从零重建 |
 | `LiteGS/example_train.py` | LiteGS 训练入口 |
 | `LiteGS/LiteGS/submodules/` | 3 个 CUDA 扩展源码（simple-knn / fused-ssim / gaussian_raster） |
 | `setup.ps1` | 一键环境部署 |
