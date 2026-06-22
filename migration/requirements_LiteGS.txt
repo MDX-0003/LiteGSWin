@@ -1,0 +1,27 @@
+# LiteGS pip dependencies (excluding local CUDA extensions + PyTorch)
+# Usage: uv pip install -r requirements_LiteGS.txt
+#我需要在当前路径配置该仓库，该仓库来自另一台硬件一致、软件不同的主机，md里部分的配置已经安装在本地，你应当先检查是否存在，避免重复或覆盖安装。另外这个仓库配置上最困难的地方一般会出现在colmap和ssim库的编译和配置上，你应当先检查这些卡点的可能问题再开始配置。在正式开始安装环境前先和我讨论，你可先解压、检查本机重复的可用环境。可用skill见
+# PyTorch must be installed first with explicit CUDA 12.8 index:
+#   uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cu128
+#   (handled automatically by setup_target.bat)
+
+# --- Core scientific ---
+numpy==2.2.6
+opencv-python==4.13.0.92
+pillow==12.2.0
+
+# --- Gaussian Splatting ---
+plyfile==1.1.4
+tqdm==4.68.2
+matplotlib==3.10.9
+torchmetrics==1.9.0
+
+# --- Utilities ---
+colorama==0.4.6
+filelock==3.29.0
+fsspec==2026.4.0
+jinja2==3.1.6
+mpmath==1.3.0
+networkx==3.4.2
+sympy==1.14.0
+lightning-utilities==0.15.3

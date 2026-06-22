@@ -1,0 +1,2 @@
+可以使用COLMAP-3.8-windows-cuda/run_colmap.py，修改data_path变量，保证图片在{data_path}/images下就可以run标定。
+然后使用COLMAP-3.8-windows-cuda/undistortion_images_pycolmap.py对其他图片进行去畸变，修改base_dir 和cali_path，以及img_num的数量，可能还需要重命名一下images.bin里面的文件路径

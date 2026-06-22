@@ -1,0 +1,69 @@
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# COLMAP (external tool, downloaded separately)
+COLMAP-*/
+
+# Compiled extensions
+*.pyd
+*.pyc
+*.pyo
+__pycache__/
+*.egg-info/
+*.egg
+build/
+dist/
+
+# IDE / Editor (keep personal settings excluded)
+.claude/settings.local.json
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Temp / Debug
+temp_build/
+*.log
+*_log.txt
+
+# Training output PLY files
+*.ply
+
+# Results (generated output)
+results/
+results-new-test/
+
+# Data - COLMAP generated outputs (runtime only)
+data/*/distorted/
+data/*/images/
+data/*/sparse/            # training frame sparse
+data/*/stereo/
+data/*/depth_maps/
+data/*/consistency_graphs/
+data/calibration/*/distorted/
+data/calibration/*/sparse_bin/
+data/**/*.db
+data/**/*.db-shm
+data/**/*.db-wal
+
+# EXCEPT: keep calibration sparse model (required for pipeline)
+!data/calibration/*/sparse/
+!data/calibration/*/sparse/**
+
+# Training frame temporary files
+data/*/*/*.ini
+data/*/*/*.sh
+
+# Backup files
+*.bak
+*.zip
+
+# UV cache
+uv_cache/
