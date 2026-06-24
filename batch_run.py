@@ -23,14 +23,14 @@ All extra arguments are forwarded to run_LiteGS_pipeline.py.
 """
 
 import argparse
+import json
 import logging
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
-
-REPO_ROOT = Path(__file__).resolve().parent
-DATA_ROOT = REPO_ROOT / "data"
+from utils.common import auto_detect_frame_id, REPO_ROOT, DATA_ROOT
 
 
 def parse_args() -> argparse.Namespace:
@@ -93,34 +93,74 @@ def output_already_exists(sub_dir: str, frame_id: str) -> bool:
     return output_ply.exists()
 
 
-def auto_detect_frame_id(frame_path: Path) -> str:
-    """Extract frame_id from directory name, same logic as run_LiteGS_pipeline."""
-    parts = frame_path.name.split("-")
-    if len(parts) >= 4 and len(parts[-1]) == 6 and parts[-1].isdigit():
-        return parts[-1]
-    raise ValueError(f"Cannot extract frame_id from: {frame_path.name}")
+def _frame_timing_path(sub_dir: str, frame_id: str) -> Path:
+    """Intermediate per-frame timing file written by run_LiteGS_pipeline.py."""
+    return REPO_ROOT / "results" / sub_dir / f"{frame_id}_timing.json"
+
+
+def _batch_timing_path(sub_dir: str) -> Path:
+    """Aggregated batch timing file."""
+    return REPO_ROOT / "results" / sub_dir / "batch_timing.json"
+
+
+def load_frame_timing(timing_path: Path) -> dict | None:
+    """Read a per-frame timing JSON, or None if the file doesn't exist."""
+    if not timing_path.exists():
+        return None
+    try:
+        return json.loads(timing_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def upsert_batch_timing(sub_dir: str, frame_id: str, timing: dict) -> None:
+    """Insert or update one frame's timing record in the batch JSON."""
+    batch_path = _batch_timing_path(sub_dir)
+    batch_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if batch_path.exists():
+        try:
+            batch = json.loads(batch_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            batch = {}
+    else:
+        batch = {}
+
+    batch.setdefault("sub_dir", sub_dir)
+    batch.setdefault("frames", {})
+    batch["frames"][frame_id] = timing
+    batch["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    batch_path.write_text(json.dumps(batch, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def run_single(
     frame_path: Path,
+    frame_id: str,
     sub_dir: str,
     pipeline_extra_args: list[str],
     python_executable: str,
     force: bool = False,
-) -> int:
-    """Run the pipeline for one frame. Returns the exit code."""
+) -> tuple[int, dict | None]:
+    """Run the pipeline for one frame. Returns (exit_code, timing_dict_or_None)."""
+    timing_output_path = _frame_timing_path(sub_dir, frame_id)
+
     command = [
         python_executable,
         str(REPO_ROOT / "run_LiteGS_pipeline.py"),
         "-s",
         str(frame_path),
+        "--timing_output",
+        str(timing_output_path),
         *pipeline_extra_args,
     ]
     if force:
         command.append("--force")
     logging.info("Running: %s", " ".join(command))
     result = subprocess.run(command, cwd=str(REPO_ROOT))
-    return result.returncode
+
+    timing = load_frame_timing(timing_output_path)
+    return result.returncode, timing
 
 
 def main() -> int:
@@ -148,15 +188,15 @@ def main() -> int:
         f" (starting from {args.start_from})" if args.start_from else "",
     )
 
-    skipped: list[Path] = []
-    to_process: list[Path] = []
+    skipped: list[tuple[Path, str]] = []   # (path, reason)
+    to_process: list[tuple[Path, str]] = []  # (path, frame_id)
 
     for frame_path in frames:
         try:
             fid = auto_detect_frame_id(frame_path)
         except ValueError:
             logging.warning("Skipping %s (cannot extract frame_id)", frame_path.name)
-            skipped.append(frame_path)
+            skipped.append((frame_path, "cannot extract frame_id"))
             continue
 
         if not args.force and output_already_exists(args.sub_dir, fid):
@@ -164,18 +204,18 @@ def main() -> int:
                 "Skipping %s (output already exists, use --force to re-run)",
                 frame_path.name,
             )
-            skipped.append(frame_path)
+            skipped.append((frame_path, "output exists"))
             continue
 
-        to_process.append(frame_path)
+        to_process.append((frame_path, fid))
 
     if args.dry_run:
         logging.info("Dry run — would process %d frame(s):", len(to_process))
-        for fp in to_process:
+        for fp, _fid in to_process:
             logging.info("  %s", fp.name)
         if skipped:
             logging.info("Would skip %d frame(s):", len(skipped))
-            for fp in skipped:
+            for fp, _reason in skipped:
                 logging.info("  %s", fp.name)
         return 0
 
@@ -184,36 +224,77 @@ def main() -> int:
         return 0
 
     logging.info("Will process %d frame(s):", len(to_process))
-    for fp in to_process:
+    for fp, _fid in to_process:
         logging.info("  %s", fp.name)
 
-    failed: list[tuple[Path, int]] = []
-    for i, frame_path in enumerate(to_process, 1):
+    failed: list[tuple[Path, str, int]] = []  # (path, frame_id, exit_code)
+    succeeded: list[tuple[Path, str, dict]] = []  # (path, frame_id, timing)
+    total_colmap = 0.0
+    total_train = 0.0
+
+    for i, (frame_path, fid) in enumerate(to_process, 1):
         logging.info(
             "=== [%d/%d] %s ===", i, len(to_process), frame_path.name,
         )
-        code = run_single(
+        code, timing = run_single(
             frame_path,
+            fid,
             args.sub_dir,
             args.pipeline_extra_args,
             args.python_executable,
             force=args.force,
         )
+
         if code != 0:
             logging.error("Frame %s failed with code %d.", frame_path.name, code)
-            failed.append((frame_path, code))
+            failed.append((frame_path, fid, code))
+            continue
+
+        if timing:
+            upsert_batch_timing(args.sub_dir, fid, timing)
+            succeeded.append((frame_path, fid, timing))
+            total_colmap += timing.get("colmap_seconds", 0.0)
+            total_train += timing.get("train_seconds", 0.0)
+            logging.info(
+                "Frame %s completed: %.1fs (colmap: %.1fs, train: %.1fs)",
+                fid,
+                timing.get("total_seconds", 0),
+                timing.get("colmap_seconds", 0),
+                timing.get("train_seconds", 0),
+            )
         else:
-            logging.info("Frame %s completed.", frame_path.name)
+            # Completed but no timing file produced (should not normally happen)
+            succeeded.append((frame_path, fid, {}))
+            logging.info("Frame %s completed (no timing).", frame_path.name)
+
+    n_total = len(to_process)
+    n_ok = len(succeeded)
+    n_fail = len(failed)
+    total_seconds = total_colmap + total_train
 
     logging.info(
-        "Batch done. %d succeeded, %d failed.",
-        len(to_process) - len(failed),
-        len(failed),
+        "Batch done. %d succeeded, %d failed%s.",
+        n_ok,
+        n_fail,
+        f", {len(skipped)} skipped" if skipped else "",
     )
+    if n_ok:
+        logging.info(
+            "Timing summary — total: %.1fs (%.1f min), colmap: %.1fs, train: %.1fs, avg/frame: %.1fs",
+            total_seconds,
+            total_seconds / 60,
+            total_colmap,
+            total_train,
+            total_seconds / n_ok,
+        )
+        logging.info(
+            "Timing saved to %s",
+            _batch_timing_path(args.sub_dir),
+        )
     if failed:
         logging.error("Failed frames:")
-        for fp, code in failed:
-            logging.error("  %s (code %d)", fp.name, code)
+        for fp, fid, code in failed:
+            logging.error("  %s (%s, code %d)", fp.name, fid, code)
         return 1
 
     return 0

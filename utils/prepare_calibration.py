@@ -5,8 +5,12 @@ import struct
 import subprocess
 import sys
 from pathlib import Path
-
+#uv run python utils/prepare_calibration.py --sub_dir 0624
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+
+from utils.common import rename_images_sequential
+
 READ_WRITE_MODEL_ROOT = REPO_ROOT / "gaussian-splatting" / "utils"
 sys.path.insert(0, str(READ_WRITE_MODEL_ROOT))
 from read_write_model import read_images_binary
@@ -349,6 +353,7 @@ def main() -> int:
             return 1
 
         move_images_to_input(source_path)
+        rename_images_sequential(source_path / "input")
         if not has_input_images(source_path):
             logging.error(
                 "No calibration images found in %s. "

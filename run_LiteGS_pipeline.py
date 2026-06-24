@@ -1,59 +1,24 @@
 import argparse
+import json
 import logging
 import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 import time
 
-
-REPO_ROOT = Path(__file__).resolve().parent
-LITEGS_ROOT = REPO_ROOT / "LiteGS"
+from utils.common import (
+    auto_detect_frame_id,
+    auto_detect_model_sub_dir,
+    LITEGS_ROOT,
+    REPO_ROOT,
+)
 
 # Allow importing from LiteGS/
 sys.path.insert(0, str(LITEGS_ROOT))
 from cameras_bin_to_json import convert as cameras_bin_to_json_convert
-
-
-def auto_detect_frame_id(source_path: Path) -> str:
-    """Extract frame_id from the last segment of source_path.
-
-    Examples:
-        data/0613/2026-06-13-234829  -> "234829"
-        data/0608/without_sword/2026-06-08-105443 -> "105443"
-    """
-    last = source_path.name
-    parts = last.split("-")
-    # Expect YYYY-MM-DD-HHmmss (4 parts separated by hyphens)
-    if len(parts) >= 4 and len(parts[-1]) == 6 and parts[-1].isdigit():
-        return parts[-1]
-    raise ValueError(
-        f"Cannot auto-detect --frame_id from source path '{source_path}'. "
-        f"Expected the last directory to match YYYY-MM-DD-HHmmss. "
-        f"Please specify --frame_id manually."
-    )
-
-
-def auto_detect_model_sub_dir(source_path: Path) -> str:
-    """Extract model_sub_dir from source_path by finding the directory after 'data'.
-
-    Examples:
-        data/0613/2026-06-13-234829        -> "0613"
-        data/0608/without_sword/2026-06-08-105443 -> "0608"
-    """
-    parts = source_path.parts
-    try:
-        data_idx = parts.index("data")
-        if data_idx + 1 < len(parts):
-            return parts[data_idx + 1]
-    except ValueError:
-        pass
-    raise ValueError(
-        f"Cannot auto-detect --model_sub_dir from source path '{source_path}'. "
-        f"Expected to find 'data' directory in the path. "
-        f"Please specify --model_sub_dir manually."
-    )
 
 
 def resolve_params(args: argparse.Namespace, source_path: Path) -> None:
@@ -208,6 +173,15 @@ def parse_args() -> argparse.Namespace:
         type=str,
         help="Python executable used to run child scripts.",
     )
+    parser.add_argument(
+        "--timing_output",
+        default=None,
+        type=str,
+        help=(
+            "If set, write timing JSON to this path. "
+            "Used by batch_run.py to collect per-frame timings."
+        ),
+    )
     args, train_extra_args = parser.parse_known_args()
     args.train_extra_args = normalize_extra_args(train_extra_args)
     return args
@@ -357,6 +331,30 @@ def check_output_exists(model_sub_dir: str, frame_id: str) -> Path | None:
     return output_ply if output_ply.exists() else None
 
 
+def write_frame_timing(
+    timing_output: str,
+    frame_name: str,
+    frame_id: str,
+    model_sub_dir: str,
+    colmap_seconds: float,
+    train_seconds: float,
+) -> None:
+    """Write per-frame timing JSON. Only called when --timing_output is set."""
+    timing = {
+        "frame_name": frame_name,
+        "frame_id": frame_id,
+        "model_sub_dir": model_sub_dir,
+        "colmap_seconds": round(colmap_seconds, 1),
+        "train_seconds": round(train_seconds, 1),
+        "total_seconds": round(colmap_seconds + train_seconds, 1),
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    timing_path = Path(timing_output)
+    timing_path.parent.mkdir(parents=True, exist_ok=True)
+    timing_path.write_text(json.dumps(timing, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    logging.info("Timing written to %s", timing_path)
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     args = parse_args()
@@ -389,15 +387,32 @@ def main() -> int:
         # Shared results at results/<model_sub_dir>/
         results_dir = model_path.parent
 
+        colmap_seconds = 0.0
+        train_seconds = 0.0
+
         if not args.skip_colmap:
+            t0 = time.time()
             colmap_command = build_colmap_command(args, source_path)
             run_command(colmap_command, REPO_ROOT)
+            colmap_seconds = time.time() - t0
             generate_cameras_json(args, source_path, results_dir)
 
+        t0 = time.time()
         train_command = build_train_command(args, source_path, model_path)
         run_command(train_command, REPO_ROOT)
+        train_seconds = time.time() - t0
 
         copy_final_ply(model_path, results_dir, args)
+
+        if args.timing_output:
+            write_frame_timing(
+                args.timing_output,
+                source_path.name,
+                args.frame_id,
+                args.model_sub_dir,
+                colmap_seconds,
+                train_seconds,
+            )
 
     except subprocess.CalledProcessError as exc:
         logging.error("Command failed with code %s.", exc.returncode)

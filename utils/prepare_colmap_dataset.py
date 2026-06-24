@@ -6,6 +6,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+
+from utils.common import rename_images_sequential
+
 
 IMAGE_EXTENSIONS = {
     ".jpg",
@@ -16,9 +21,6 @@ IMAGE_EXTENSIONS = {
     ".tiff",
     ".webp",
 }
-
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CALIBRATION_ROOT = REPO_ROOT / "data" / "calibration"
 COLMAP_IMAGE_ID_MAX = 2147483647
 
@@ -190,6 +192,8 @@ def ensure_input_images(source_path: Path, stride: int = 1, min_images: int = 3)
         )
     else:
         logging.info("Copied %d image(s) from raw_imgs/ to input/.", copied)
+
+    rename_images_sequential(input_path)
 
     if copied < min_images:
         raise ValueError(
