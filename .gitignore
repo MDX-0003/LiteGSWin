@@ -53,12 +53,8 @@ data/**/*.db
 data/**/*.db-shm
 data/**/*.db-wal
 
-# EXCEPT: keep calibration sparse model (required for pipeline)
-!data/calibration/*/sparse/
-!data/calibration/*/sparse/**
-
-# Training frame temporary files
-data/**/
+# Training frame temporary files — ignore everything under data/
+data/**
 
 # Backup files
 *.bak
