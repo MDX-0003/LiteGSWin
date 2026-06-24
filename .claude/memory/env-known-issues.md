@@ -19,8 +19,10 @@ metadata:
 | COLMAP `SQLite error database.cc:1063` | Old COLMAP 3.8 database format | Delete `database.db` and regenerate with 3.12.3 |
 | `Check failed: NumPoints2D() (923 vs. 2207)` | Calibration/training keypoint count mismatch | Auto-fixed by `sync_calibration_keypoints()` in prepare_colmap_dataset.py |
 | `Database images do not match calibration` (only even images missing) | Empty keypoint lines break parser state machine | Use non-empty placeholder keypoints: `0 0 -1` |
-| `batch_run.py --force` doesn't force re-run | `--force` not forwarded to `run_LiteGS_pipeline.py` | Use `-- --force` after batch args |
+| `batch_run.py --force` doesn't force re-run | `--force` not forwarded to `run_LiteGS_pipeline.py` | **FIXED** — `run_single()` now appends `--force` to pipeline command when batch `--force` is set |
 | `uv python utils\script.py` fails | `uv python` manages Python versions, doesn't run scripts | Use `uv run python utils\script.py` |
+| COLMAP mapper → image_undistorter crash (exit 3221226505) | mapper writes to `distorted/sparse/0/0/`, undistorter reads `distorted/sparse/0/` | **PENDING FIX** — change mapper `--output_path` from `distorted/sparse/0` to `distorted/sparse` |
+| "After stride filtering only N image(s) remain" | `--frame_stride_min_images` default (3) blocks small datasets | Lower with `--frame_stride_min_images N` or reduce `--frame_stride` |
 | COLMAP `STATUS_DLL_NOT_FOUND` (0xC0000135) | COLMAP DLLs not on PATH | Add COLMAP `bin\` to PATH |
 | `nvcc warning: support for architectures prior to sm_75 will be removed` | Harmless — nvcc deprecation notice | Ignore or add `-Wno-deprecated-gpu-targets` |
 

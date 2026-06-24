@@ -30,4 +30,10 @@ metadata:
 
 **Why**: Without this, `point_triangulator` crashes. The source machine may have had matching SIFT counts or a COLMAP build without this check. Our fix makes the pipeline robust regardless.
 
+## Calibration Auto-Detect & Mapper Fallback
+
+When no calibration data exists, `prepare_colmap_dataset.py` auto-detects and runs COLMAP `mapper` (full SfM) instead of `point_triangulator`. Detection: ① explicit `--calib_sub_dir`/`--calib_sparse_path` → calibration path ② `--force_no_calib` → mapper ③ auto-detect `data/calibration/<model_sub_dir>/sparse/`. Mapper skips calibration-specific steps (`sync_calibration_keypoints`, `normalize_database_to_calibration`).
+
+**Known bug**: mapper `--output_path` writes to `distorted/sparse/0/0/` (extra `0/`), causing `image_undistorter` crash. Pending fix: change output_path from `distorted/sparse/0` to `distorted/sparse`.
+
 **How to apply:** No manual action needed — both scripts handle this automatically after code changes committed.
