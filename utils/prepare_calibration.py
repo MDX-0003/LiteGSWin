@@ -72,12 +72,51 @@ def is_image(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
 
 
+def _resolve_image_dir(source_path: Path) -> Path:
+    """Find the directory that actually contains calibration images.
+
+    *If* ``source_path`` itself has images → return ``source_path``.
+    *Else if* exactly one immediate subdirectory has images → return that
+    subdirectory.  All other situations (no images at all, or multiple
+    subdirectories with images) raise an error.
+    """
+    # Case 1: images directly in source_path
+    if any(is_image(p) for p in source_path.iterdir()):
+        return source_path
+
+    # Case 2: look in immediate subdirectories
+    subdirs_with_images: list[Path] = []
+    for sub in sorted(source_path.iterdir()):
+        if not sub.is_dir():
+            continue
+        if any(is_image(p) for p in sub.iterdir()):
+            subdirs_with_images.append(sub)
+
+    if len(subdirs_with_images) == 1:
+        logging.info("Using images from subdirectory: %s", subdirs_with_images[0].name)
+        return subdirs_with_images[0]
+
+    if len(subdirs_with_images) == 0:
+        raise FileNotFoundError(
+            f"No images found in {source_path} or its immediate subdirectories. "
+            f"Please place calibration images in this directory."
+        )
+
+    raise FileNotFoundError(
+        f"Ambiguous: multiple subdirectories contain images in {source_path}. "
+        f"Please place images directly in this directory, or keep only one "
+        f"subdirectory with images. Found: "
+        + ", ".join(d.name for d in subdirs_with_images)
+    )
+
+
 def move_images_to_input(source_path: Path) -> int:
+    image_dir = _resolve_image_dir(source_path)
     input_path = source_path / "input"
     input_path.mkdir(parents=True, exist_ok=True)
 
     moved_count = 0
-    for image_path in sorted(source_path.iterdir()):
+    for image_path in sorted(image_dir.iterdir()):
         if not is_image(image_path):
             continue
 
