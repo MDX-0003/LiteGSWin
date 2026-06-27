@@ -1,7 +1,7 @@
 """Batch runner: serially run the LiteGS pipeline on all frames under a sub_dir.
 
 Usage:
-    python batch_run.py --sub_dir 0613
+    uv run python batch_run.py --sub_dir 0613
     python batch_run.py --sub_dir 0613 -r 4 --target_primitives 500000
     python batch_run.py --sub_dir 0613 --start_from 2026-06-13-234712
     python batch_run.py --sub_dir 0613 --frame_stride 3

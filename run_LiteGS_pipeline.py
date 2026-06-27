@@ -146,9 +146,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--iterations",
-        default=30000,
+        default=25000,
         type=int,
-        help="LiteGS training iterations. Default: 30000.",
+        help="LiteGS training iterations. Default: 25000.",
     )
     parser.add_argument(
         "--frame_stride",
