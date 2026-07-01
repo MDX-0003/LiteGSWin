@@ -20,26 +20,38 @@
     .\setup.ps1
     .\setup.ps1 -ColmapPath "C:\tools\colmap"
     .\setup.ps1 -CudaPath "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8" -ColmapPath "D:\colmap"
+    .\setup.ps1 -SkipTo 5                                      (skip to verification only)
+    .\setup.ps1 -SkipTo 4 -ColmapPath "E:\colmap"              (skip to CUDA extensions)
 #>
 
 param(
     [string]$CudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8",
     [string]$ColmapPath = "",
     [string]$VsMsbcPath = "",
-    [switch]$SkipCudaExtensions = $false
+    [switch]$SkipCudaExtensions = $false,
+    [ValidateSet(0, 1, 2, 3, 4, 5)]
+    [int]$SkipTo = 0
 )
 
 $ErrorActionPreference = "Stop"
 $RootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $RootDir
 
+# Suppress uv progress bars (they go to stderr and trip PowerShell's error handling)
+$env:UV_NO_PROGRESS = "1"
+
 Write-Host "==============================================" -ForegroundColor Cyan
 Write-Host "  LiteGS Pipeline - Environment Setup" -ForegroundColor Cyan
+if ($SkipTo -gt 0) {
+    Write-Host "  (Skipping to step $SkipTo)" -ForegroundColor Yellow
+}
 Write-Host "==============================================" -ForegroundColor Cyan
 Write-Host ""
 
+function Should-Run($step) { return $step -ge $SkipTo }
 
 # ---- Step 0: Verify prerequisites ----
+if (Should-Run 0) {
 Write-Host "[0/6] Verifying prerequisites..." -ForegroundColor Yellow
 
 $tools = @{
@@ -112,22 +124,28 @@ if ($colmapExe -and (Test-Path $colmapExe)) {
 }
 
 Write-Host ""
-
+}
 
 # ---- Step 1: Python 3.10 + venv ----
+if (Should-Run 1) {
 Write-Host "[1/6] Setting up Python 3.10 virtual environment..." -ForegroundColor Yellow
 
-uv python install 3.10 2>$null
-uv venv --python 3.10 .venv
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  ERROR: Failed to create virtual environment." -ForegroundColor Red
-    exit 1
+cmd /c "uv python install 3.10 2>nul"
+if (Test-Path ".venv") {
+    Write-Host "  [SKIP] .venv already exists, reusing it."
+} else {
+    uv venv --python 3.10 .venv
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  ERROR: Failed to create virtual environment." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  [OK] Virtual environment created"
 }
-Write-Host "  [OK] Virtual environment created"
 Write-Host ""
-
+}
 
 # ---- Step 2: PyTorch ----
+if (Should-Run 2) {
 Write-Host "[2/6] Installing PyTorch 2.7.0 with CUDA 12.8..." -ForegroundColor Yellow
 
 uv pip install torch==2.7.0 torchvision==0.22.0 torchaudio==2.7.0 `
@@ -138,9 +156,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  [OK] PyTorch 2.7.0+cu128 installed"
 Write-Host ""
-
+}
 
 # ---- Step 3: Pip dependencies ----
+if (Should-Run 3) {
 Write-Host "[3/6] Installing pip dependencies..." -ForegroundColor Yellow
 
 uv pip install -r migration\requirements_LiteGS.txt
@@ -150,9 +169,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host "  [OK] Dependencies installed"
 Write-Host ""
-
+}
 
 # ---- Step 4: CUDA extensions ----
+if (Should-Run 4) {
 if (-not $SkipCudaExtensions) {
     Write-Host "[4/6] Compiling CUDA extensions (this may take several minutes)..." -ForegroundColor Yellow
 
@@ -210,18 +230,24 @@ if (-not $SkipCudaExtensions) {
 
     Write-Host ""
 }
-
+}
 
 # ---- Step 5: Verify ----
+if (Should-Run 5) {
 Write-Host "[5/6] Verifying installation..." -ForegroundColor Yellow
 
-.venv\Scripts\python.exe -c @"
+# Write verification script to temp file — avoids all PowerShell string-escaping issues
+$verifyScript = Join-Path $env:TEMP "litegs_verify.py"
+@"
 import torch
-print(f'PyTorch: {torch.__version__}')
-print(f'CUDA available: {torch.cuda.is_available()}')
-print(f'GPU: {torch.cuda.get_device_name(0)}')
-print(f'Arch: sm_{"".join(map(str, torch.cuda.get_device_capability()))}')
-"@
+print(f"PyTorch: {torch.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+print(f"GPU: {torch.cuda.get_device_name(0)}")
+print(f"Arch: sm_{''.join(map(str, torch.cuda.get_device_capability()))}")
+"@ | Out-File -Encoding utf8 -FilePath $verifyScript
+
+.venv\Scripts\python.exe $verifyScript
+Remove-Item $verifyScript -ErrorAction SilentlyContinue
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  ERROR: PyTorch verification failed." -ForegroundColor Red
@@ -233,6 +259,7 @@ if (-not $SkipCudaExtensions) {
     .venv\Scripts\python.exe -c "import torch; import simple_knn._C; print('  simple_knn: OK')" 2>$null
     .venv\Scripts\python.exe -c "import torch; import litegs_fused; print('  litegs_fused: OK')" 2>$null
     .venv\Scripts\python.exe -c "import torch, fused_ssim; img=torch.rand(1,3,128,128,device='cuda'); fused_ssim.fused_l1_ssim_loss(img,img); print('  fused_ssim: OK')" 2>$null
+}
 }
 
 Write-Host ""
