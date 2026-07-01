@@ -27,6 +27,7 @@ import json
 import logging
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -65,26 +66,51 @@ def parse_args() -> argparse.Namespace:
         type=str,
         help="Python executable for child processes.",
     )
+    parser.add_argument(
+        "--frames",
+        nargs="*",
+        default=None,
+        type=str,
+        help="Only process these specific frame directory names (space-separated). "
+             "If omitted, all frame directories under data/<sub_dir>/ are processed.",
+    )
+    parser.add_argument(
+        "--worker-status",
+        type=str,
+        default=None,
+        help="Path to write a JSON status file during training "
+             "(for distributed monitoring by v7 pipeline).",
+    )
     args, pipeline_extra_args = parser.parse_known_args()
     args.pipeline_extra_args = pipeline_extra_args
     return args
 
 
-def discover_frames(sub_dir: str, start_from: str | None = None) -> list[Path]:
-    """Find all timestamp directories under data/<sub_dir>/, sorted by name."""
+def discover_frames(sub_dir: str, start_from: str | None = None,
+                    frames: list[str] | None = None) -> list[Path]:
+    """Find all timestamp directories under data/<sub_dir>/, sorted by name.
+
+    If *frames* is given, only directories whose names appear in the list
+    are returned (useful for distributed training where each worker only
+    processes a subset of frames).
+    """
     sub_dir_path = (DATA_ROOT / sub_dir).resolve()
     if not sub_dir_path.exists():
         raise FileNotFoundError(f"Directory does not exist: {sub_dir_path}")
 
-    frames = sorted(
+    all_frames = sorted(
         p for p in sub_dir_path.iterdir()
         if p.is_dir()
     )
 
     if start_from:
-        frames = [f for f in frames if f.name >= start_from]
+        all_frames = [f for f in all_frames if f.name >= start_from]
 
-    return frames
+    if frames is not None:
+        frame_set = set(frames)
+        all_frames = [f for f in all_frames if f.name in frame_set]
+
+    return all_frames
 
 
 def output_already_exists(sub_dir: str, frame_id: str) -> bool:
@@ -101,6 +127,26 @@ def _frame_timing_path(sub_dir: str, frame_id: str) -> Path:
 def _batch_timing_path(sub_dir: str) -> Path:
     """Aggregated batch timing file."""
     return REPO_ROOT / "results" / sub_dir / "batch_timing.json"
+
+
+def _write_worker_status(status_path: str | None, **fields) -> None:
+    """Write a JSON status file for distributed monitoring (v7 pipeline).
+
+    If *status_path* is None this is a no-op, so the behaviour is identical
+    to the unmodified batch_run when the flag is not passed.
+
+    The file is written atomically (tmp + rename).
+    """
+    if status_path is None:
+        return
+    import time as _time
+    fields.setdefault("timestamp", _time.time())
+    p = Path(status_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(fields, f, ensure_ascii=False, indent=2)
+    tmp.replace(p)
 
 
 def load_frame_timing(timing_path: Path) -> dict | None:
@@ -172,7 +218,7 @@ def main() -> int:
     args = parse_args()
 
     try:
-        frames = discover_frames(args.sub_dir, args.start_from)
+        frames = discover_frames(args.sub_dir, args.start_from, args.frames)
     except FileNotFoundError as exc:
         logging.error("%s", exc)
         return 1
@@ -231,11 +277,33 @@ def main() -> int:
     succeeded: list[tuple[Path, str, dict]] = []  # (path, frame_id, timing)
     total_colmap = 0.0
     total_train = 0.0
+    start_time = time.time()
+
+    # initial status file (v7 distributed monitoring)
+    _write_worker_status(args.worker_status,
+                         status="running",
+                         current_frame="",
+                         current_stage="starting",
+                         total_frames=len(to_process),
+                         completed_frames=0,
+                         failed_frames=0,
+                         elapsed_seconds=0.0)
 
     for i, (frame_path, fid) in enumerate(to_process, 1):
         logging.info(
             "=== [%d/%d] %s ===", i, len(to_process), frame_path.name,
         )
+
+        # status: starting this frame
+        _write_worker_status(args.worker_status,
+                             status="running",
+                             current_frame=frame_path.name,
+                             current_stage="colmap",
+                             total_frames=len(to_process),
+                             completed_frames=len(succeeded),
+                             failed_frames=len(failed),
+                             elapsed_seconds=time.time() - start_time)
+
         code, timing = run_single(
             frame_path,
             fid,
@@ -248,6 +316,14 @@ def main() -> int:
         if code != 0:
             logging.error("Frame %s failed with code %d.", frame_path.name, code)
             failed.append((frame_path, fid, code))
+            _write_worker_status(args.worker_status,
+                                 status="running",
+                                 current_frame=frame_path.name,
+                                 current_stage="failed",
+                                 total_frames=len(to_process),
+                                 completed_frames=len(succeeded),
+                                 failed_frames=len(failed),
+                                 elapsed_seconds=time.time() - start_time)
             continue
 
         if timing:
@@ -266,6 +342,16 @@ def main() -> int:
             # Completed but no timing file produced (should not normally happen)
             succeeded.append((frame_path, fid, {}))
             logging.info("Frame %s completed (no timing).", frame_path.name)
+
+    # final status
+    _write_worker_status(args.worker_status,
+                         status="done",
+                         current_frame="",
+                         current_stage="done",
+                         total_frames=len(to_process),
+                         completed_frames=len(succeeded),
+                         failed_frames=len(failed),
+                         elapsed_seconds=time.time() - start_time)
 
     n_total = len(to_process)
     n_ok = len(succeeded)
