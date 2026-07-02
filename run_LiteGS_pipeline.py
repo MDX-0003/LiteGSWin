@@ -382,6 +382,11 @@ def main() -> int:
             model_path = (
                 REPO_ROOT / "results" / args.model_sub_dir / args.frame_id
             ).resolve()
+
+        # force: purge old checkpoints so training starts from scratch
+        if args.force and model_path.exists():
+            shutil.rmtree(model_path)
+            logging.info("force-clean old model at %s", model_path)
         model_path.mkdir(parents=True, exist_ok=True)
 
         # Shared results at results/<model_sub_dir>/
