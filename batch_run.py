@@ -71,8 +71,10 @@ def parse_args() -> argparse.Namespace:
         nargs="*",
         default=None,
         type=str,
-        help="Only process these specific frame directory names (space-separated). "
-             "If omitted, all frame directories under data/<sub_dir>/ are processed.",
+        help="Only process these specific frame directories (space-separated). "
+             "Accepts full dirname (114-2026-06-30-122221) or frame_id / HHMMSS "
+             "(122221).  If omitted, all directories under data/<sub_dir>/ are "
+             "processed.",
     )
     parser.add_argument(
         "--worker-status",
@@ -90,9 +92,14 @@ def discover_frames(sub_dir: str, start_from: str | None = None,
                     frames: list[str] | None = None) -> list[Path]:
     """Find all timestamp directories under data/<sub_dir>/, sorted by name.
 
-    If *frames* is given, only directories whose names appear in the list
-    are returned (useful for distributed training where each worker only
-    processes a subset of frames).
+    If *frames* is given, only matching directories are returned.  Each item
+    in *frames* is matched against:
+
+    - the **full directory name** (e.g. ``114-2026-06-30-122221``)
+    - the extracted **frame_id** (e.g. ``122221``, the HHMMSS part)
+
+    This lets operators pass the short ``--frames 122221`` form when running
+    batch_run standalone.
     """
     sub_dir_path = (DATA_ROOT / sub_dir).resolve()
     if not sub_dir_path.exists():
@@ -107,8 +114,30 @@ def discover_frames(sub_dir: str, start_from: str | None = None,
         all_frames = [f for f in all_frames if f.name >= start_from]
 
     if frames is not None:
-        frame_set = set(frames)
-        all_frames = [f for f in all_frames if f.name in frame_set]
+        # build lookup tables: dirname → path, frame_id → path
+        by_name: dict[str, Path] = {}
+        by_id: dict[str, Path] = {}
+        for fp in all_frames:
+            by_name[fp.name] = fp
+            try:
+                fid = auto_detect_frame_id(fp)
+                by_id[fid] = fp
+            except ValueError:
+                pass
+
+        matched: list[Path] = []
+        for token in frames:
+            if token in by_name:
+                matched.append(by_name[token])
+            elif token in by_id:
+                matched.append(by_id[token])
+            else:
+                logging.warning(
+                    "--frames value '%s' does not match any frame directory "
+                    "under data/%s/", token, sub_dir,
+                )
+
+        all_frames = sorted(set(matched))  # dedup (same frame matched by name + id)
 
     return all_frames
 
